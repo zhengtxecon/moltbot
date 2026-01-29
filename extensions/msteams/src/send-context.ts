@@ -9,6 +9,7 @@ import type { MSTeamsAdapter } from "./messenger.js";
 import { getMSTeamsRuntime } from "./runtime.js";
 import { createMSTeamsAdapter, loadMSTeamsSdkWithAuth } from "./sdk.js";
 import { resolveMSTeamsCredentials } from "./token.js";
+import { createCachedTokenProvider } from "./token-cache.js";
 
 export type MSTeamsConversationType = "personal" | "groupChat" | "channel";
 
@@ -118,8 +119,8 @@ export async function resolveMSTeamsSendContext(params: {
   const { sdk, authConfig } = await loadMSTeamsSdkWithAuth(creds);
   const adapter = createMSTeamsAdapter(authConfig, sdk);
 
-  // Create token provider for Graph API / OneDrive operations
-  const tokenProvider = new sdk.MsalTokenProvider(authConfig) as MSTeamsAccessTokenProvider;
+  // Create token provider for Graph API / OneDrive operations (uses persistent cache)
+  const tokenProvider = createCachedTokenProvider(creds);
 
   // Determine conversation type from stored reference
   const storedConversationType = ref.conversation?.conversationType?.toLowerCase() ?? "";

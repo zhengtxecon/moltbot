@@ -1,7 +1,7 @@
 import type { MSTeamsConfig } from "clawdbot/plugin-sdk";
 import { formatUnknownError } from "./errors.js";
-import { loadMSTeamsSdkWithAuth } from "./sdk.js";
 import { resolveMSTeamsCredentials } from "./token.js";
+import { getCachedAccessToken } from "./token-cache.js";
 
 export type ProbeMSTeamsResult = {
   ok: boolean;
@@ -14,17 +14,6 @@ export type ProbeMSTeamsResult = {
     scopes?: string[];
   };
 };
-
-function readAccessToken(value: unknown): string | null {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    const token =
-      (value as { accessToken?: unknown }).accessToken ??
-      (value as { token?: unknown }).token;
-    return typeof token === "string" ? token : null;
-  }
-  return null;
-}
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   const parts = token.split(".");
@@ -63,9 +52,10 @@ export async function probeMSTeams(cfg?: MSTeamsConfig): Promise<ProbeMSTeamsRes
   }
 
   try {
-    const { sdk, authConfig } = await loadMSTeamsSdkWithAuth(creds);
-    const tokenProvider = new sdk.MsalTokenProvider(authConfig);
-    await tokenProvider.getAccessToken("https://api.botframework.com");
+    // Verify Bot Framework token works (uses cached token with refresh)
+    await getCachedAccessToken(creds, "https://api.botframework.com");
+
+    // Try Graph token
     let graph:
       | {
           ok: boolean;
@@ -75,11 +65,8 @@ export async function probeMSTeams(cfg?: MSTeamsConfig): Promise<ProbeMSTeamsRes
         }
       | undefined;
     try {
-      const graphToken = await tokenProvider.getAccessToken(
-        "https://graph.microsoft.com",
-      );
-      const accessToken = readAccessToken(graphToken);
-      const payload = accessToken ? decodeJwtPayload(accessToken) : null;
+      const graphToken = await getCachedAccessToken(creds, "https://graph.microsoft.com");
+      const payload = graphToken ? decodeJwtPayload(graphToken) : null;
       graph = {
         ok: true,
         roles: readStringArray(payload?.roles),
