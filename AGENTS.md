@@ -88,6 +88,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `Dockerfile` - Base image with core moltbot functionality
   - `Dockerfile.local` - Extension image that inherits from base and adds gog/m365 tools
   - Local environment must use image built from `Dockerfile.local` for Google/Microsoft integrations
+- **WSL2/VPN networking:** Docker bridge network may fail with `ENETUNREACH`. Use `network_mode: host` in docker-compose.override.yml to fix.
+- **Credential persistence:** gog/m365 store credentials in `~/.config/`. Mount these directories as volumes to persist across container rebuilds:
+  ```yaml
+  volumes:
+    - ~/.config/gogcli:/home/node/.config/gogcli
+    - ~/.config/@pnp/cli-microsoft365:/home/node/.config/@pnp/cli-microsoft365
+    - ~/.config/configstore:/home/node/.config/configstore
+  ```
 
 ## exe.dev VM ops (general)
 - Access: stable path is `ssh exe.dev` then `ssh vm-name` (assume SSH key already set).
