@@ -71,14 +71,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Add auth: `docker exec -it clawdbot-moltbot-gateway-1 moltbot auth add <provider>`
 - **Docker image rebuild (after code changes or to fix missing tools):**
   ```bash
-  # Full rebuild (includes local extension tools: gog/m365/himalaya)
+  # Full rebuild (includes local extension tools: gog/m365)
   docker compose stop moltbot-gateway
   docker build -t moltbot-base:latest .
   docker build -f Dockerfile.local --build-arg BASE_IMAGE=moltbot-base:latest -t clawdbot:local .
   docker compose up -d moltbot-gateway
 
   # Verify tools are installed
-  docker exec clawdbot-moltbot-gateway-1 which gog m365 himalaya
+  docker exec clawdbot-moltbot-gateway-1 which gog m365
   ```
 - **Quick rebuild (code changes only, no new tools):**
   ```bash
@@ -86,7 +86,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ```
 - **Image architecture:**
   - `Dockerfile` - Base image with core moltbot functionality
-  - `Dockerfile.local` - Extension image that inherits from base and adds gog/m365/himalaya tools
+  - `Dockerfile.local` - Extension image that inherits from base and adds gog/m365 tools
   - Local environment must use image built from `Dockerfile.local` for Google/Microsoft integrations
 
 ## exe.dev VM ops (general)
