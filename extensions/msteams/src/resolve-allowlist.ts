@@ -1,6 +1,6 @@
 import { GRAPH_ROOT } from "./attachments/shared.js";
-import { loadMSTeamsSdkWithAuth } from "./sdk.js";
 import { resolveMSTeamsCredentials } from "./token.js";
+import { getCachedAccessToken } from "./token-cache.js";
 
 type GraphUser = {
   id?: string;
@@ -38,16 +38,6 @@ export type MSTeamsUserResolution = {
   name?: string;
   note?: string;
 };
-
-function readAccessToken(value: unknown): string | null {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    const token =
-      (value as { accessToken?: unknown }).accessToken ?? (value as { token?: unknown }).token;
-    return typeof token === "string" ? token : null;
-  }
-  return null;
-}
 
 function stripProviderPrefix(raw: string): string {
   return raw.replace(/^(msteams|teams):/i, "");
@@ -141,12 +131,7 @@ async function fetchGraphJson<T>(params: {
 async function resolveGraphToken(cfg: unknown): Promise<string> {
   const creds = resolveMSTeamsCredentials((cfg as { channels?: { msteams?: unknown } })?.channels?.msteams);
   if (!creds) throw new Error("MS Teams credentials missing");
-  const { sdk, authConfig } = await loadMSTeamsSdkWithAuth(creds);
-  const tokenProvider = new sdk.MsalTokenProvider(authConfig);
-  const token = await tokenProvider.getAccessToken("https://graph.microsoft.com");
-  const accessToken = readAccessToken(token);
-  if (!accessToken) throw new Error("MS Teams graph token unavailable");
-  return accessToken;
+  return getCachedAccessToken(creds, "https://graph.microsoft.com");
 }
 
 async function listTeamsByName(token: string, query: string): Promise<GraphGroup[]> {

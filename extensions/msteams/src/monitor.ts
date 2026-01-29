@@ -18,6 +18,7 @@ import {
 import { createMSTeamsAdapter, loadMSTeamsSdkWithAuth } from "./sdk.js";
 import { resolveMSTeamsCredentials } from "./token.js";
 import { getMSTeamsRuntime } from "./runtime.js";
+import { createCachedTokenProvider } from "./token-cache.js";
 
 export type MonitorMSTeamsOpts = {
   cfg: MoltbotConfig;
@@ -212,10 +213,11 @@ export async function monitorMSTeamsProvider(
   const express = await import("express");
 
   const { sdk, authConfig } = await loadMSTeamsSdkWithAuth(creds);
-  const { ActivityHandler, MsalTokenProvider, authorizeJWT } = sdk;
+  const { ActivityHandler, authorizeJWT } = sdk;
 
   // Auth configuration - create early so adapter is available for deliverReplies
-  const tokenProvider = new MsalTokenProvider(authConfig);
+  // Use cached token provider for persistent refresh token support
+  const tokenProvider = createCachedTokenProvider(creds);
   const adapter = createMSTeamsAdapter(authConfig, sdk);
 
   const handler = registerMSTeamsHandlers(new ActivityHandler(), {

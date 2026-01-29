@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Repository Guidelines
 - Repo: https://github.com/moltbot/moltbot
 - GitHub issues/comments/PR comments: use literal multiline strings or `-F - <<'EOF'` (or $'...') for real newlines; never embed "\\n".
@@ -14,6 +18,31 @@
   - Core channel code: `src/telegram`, `src/discord`, `src/slack`, `src/signal`, `src/imessage`, `src/web` (WhatsApp web), `src/channels`, `src/routing`
   - Extensions (channel plugins): `extensions/*` (e.g. `extensions/msteams`, `extensions/matrix`, `extensions/zalo`, `extensions/zalouser`, `extensions/voice-call`)
 - When adding channels/extensions/apps/docs, review `.github/labeler.yml` for label coverage.
+
+## Architecture Overview
+
+**Core Components** (`src/`):
+- **Gateway** (`src/gateway/`): WebSocket control plane handling session management, chat routing, authentication, and hooks
+- **Agents** (`src/agents/`): Pi agent runtime, Bash tools, provider authentication, skill installation
+- **Channels**: Messaging platform integrations (`src/telegram/`, `src/discord/`, `src/slack/`, `src/signal/`, `src/imessage/`, `src/web/`)
+- **CLI** (`src/cli/`, `src/commands/`): Command-line interface and command implementations
+- **Media Pipeline** (`src/media/`, `src/media-understanding/`): Image/audio/video processing
+- **Plugin SDK** (`src/plugin-sdk/`): Extension development SDK
+
+**Key Entry Points**:
+- `src/index.ts` - Main entry, exports public API, CLI program construction
+- `src/entry.ts` - CLI executable entry, handles Node process warning suppression
+- `src/gateway/server.ts` / `src/gateway/server.impl.ts` - Gateway server implementation
+
+**Extensions** (`extensions/`):
+- Channel extensions: msteams, matrix, googlechat, zalo, twitch, nostr, line, etc.
+- Feature extensions: memory-core, voice-call, llm-task, etc.
+- Auth extensions: google-antigravity-auth, google-gemini-cli-auth, etc.
+
+**Native Apps** (`apps/`):
+- macOS: SwiftUI menubar app with gateway integration
+- iOS: Canvas rendering, Voice Wake, Talk Mode
+- Android: Canvas rendering, Talk Mode, optional SMS
 
 ## Docs Linking (Mintlify)
 - Docs are hosted on Mintlify (docs.molt.bot).
@@ -47,6 +76,8 @@
 - Type-check/build: `pnpm build` (tsc)
 - Lint/format: `pnpm lint` (oxlint), `pnpm format` (oxfmt)
 - Tests: `pnpm test` (vitest); coverage: `pnpm test:coverage`
+- Run single test file: `pnpm test -- src/path/to/file.test.ts`
+- Run tests by name: `pnpm test -- -t "test name"`
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript (ESM). Prefer strict typing; avoid `any`.
@@ -130,6 +161,13 @@
 - Release signing/notary keys are managed outside the repo; follow internal release docs.
 - Notary auth env vars (`APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_API_KEY_P8`) are expected in your environment (per internal release docs).
 - **Multi-agent safety:** do **not** create/apply/drop `git stash` entries unless explicitly requested (this includes `git pull --rebase --autostash`). Assume other agents may be working; keep unrelated WIP untouched and avoid cross-cutting state changes.
+- **CRITICAL - Never discard user work without explicit consent:** When handling git conflicts, stash operations, or any situation where user modifications might be lost:
+  1. **Always list the affected files and changes** before taking any action
+  2. **Explain what will happen** to each modification (keep, discard, merge)
+  3. **Ask the user for explicit confirmation** before proceeding
+  4. **Never use `git checkout --theirs/--ours`, `git restore`, or `git stash drop`** on user work without asking first
+  5. If conflicts arise, present each conflict and let the user decide how to resolve it
+  - This applies even when the changes seem "unrelated" to the current task - they may be important work the user hasn't committed yet
 - **Multi-agent safety:** when the user says "push", you may `git pull --rebase` to integrate latest changes (never discard other agents' work). When the user says "commit", scope to your changes only. When the user says "commit all", commit everything in grouped chunks.
 - **Multi-agent safety:** do **not** create/remove/modify `git worktree` checkouts (or edit `.worktrees/*`) unless explicitly requested.
 - **Multi-agent safety:** do **not** switch branches / check out a different branch unless explicitly requested.

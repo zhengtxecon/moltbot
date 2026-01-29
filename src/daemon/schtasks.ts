@@ -144,11 +144,13 @@ function buildTaskScript({
   programArguments,
   workingDirectory,
   environment,
+  hidden,
 }: {
   description?: string;
   programArguments: string[];
   workingDirectory?: string;
   environment?: Record<string, string | undefined>;
+  hidden?: boolean;
 }): string {
   const lines: string[] = ["@echo off"];
   if (description?.trim()) {
@@ -164,7 +166,13 @@ function buildTaskScript({
     }
   }
   const command = programArguments.map(quoteCmdArg).join(" ");
-  lines.push(command);
+  // Use PowerShell with -WindowStyle Hidden to run without visible window
+  if (hidden) {
+    const escapedCommand = command.replace(/"/g, '\\"');
+    lines.push(`powershell -WindowStyle Hidden -Command "${escapedCommand}"`);
+  } else {
+    lines.push(command);
+  }
   return `${lines.join("\r\n")}\r\n`;
 }
 
@@ -211,6 +219,7 @@ export async function installScheduledTask({
   workingDirectory,
   environment,
   description,
+  hidden = true,
 }: {
   env: Record<string, string | undefined>;
   stdout: NodeJS.WritableStream;
@@ -218,6 +227,7 @@ export async function installScheduledTask({
   workingDirectory?: string;
   environment?: Record<string, string | undefined>;
   description?: string;
+  hidden?: boolean;
 }): Promise<{ scriptPath: string }> {
   await assertSchtasksAvailable();
   const scriptPath = resolveTaskScriptPath(env);
@@ -233,6 +243,7 @@ export async function installScheduledTask({
     programArguments,
     workingDirectory,
     environment,
+    hidden,
   });
   await fs.writeFile(scriptPath, script, "utf8");
 
