@@ -54,6 +54,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - README (GitHub): keep absolute docs URLs (`https://docs.molt.bot/...`) so links work on GitHub.
 - Docs content must be generic: no personal device names/hostnames/paths; use placeholders like `user@gateway-host` and “gateway host”.
 
+## Docker Gateway Operations (tx_zheng local)
+- **Bot must ALWAYS run inside Docker** - never run `moltbot gateway` directly on the host.
+- Container name: `clawdbot-moltbot-gateway-1`
+- Config location (inside container): `~/.clawdbot/moltbot.json`
+- Config is git-tracked inside the container at `~/.clawdbot/` - always commit changes after modifying config.
+- Enter container: `docker exec -it clawdbot-moltbot-gateway-1 bash`
+- Restart container: `docker compose restart` (from project root)
+- Rebuild after code changes: `docker compose build && docker compose up -d`
+- View logs: `docker compose logs -f moltbot-gateway`
+- **Config modification safety:**
+  - Always read the full config before modifying
+  - Never overwrite the entire file - use targeted edits
+  - Verify critical sections exist after changes: `channels`, `tools`, `hooks`, `skills`, `gateway`
+  - If config is corrupted, restore from git: `cd ~/.clawdbot && git checkout -- moltbot.json`
+- Add auth: `docker exec -it clawdbot-moltbot-gateway-1 moltbot auth add <provider>`
+
 ## exe.dev VM ops (general)
 - Access: stable path is `ssh exe.dev` then `ssh vm-name` (assume SSH key already set).
 - SSH flaky: use exe.dev web terminal or Shelley (web agent); keep a tmux session for long ops.
