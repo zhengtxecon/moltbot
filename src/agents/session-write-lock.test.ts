@@ -159,4 +159,77 @@ describe("acquireSessionWriteLock", () => {
     expect(process.listeners("SIGINT")).toContain(keepAlive);
     process.off("SIGINT", keepAlive);
   });
+
+  it("reclaims stale lock from same PID (container restart scenario)", async () => {
+    // Simulates: container crashes, lock file remains with pid=process.pid,
+    // container restarts and gets the same PID due to Docker PID reuse.
+    // The lock should be reclaimed since it's from the same hostname but different instanceId.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "clawdbot-lock-pid-reuse-"));
+    try {
+      const sessionFile = path.join(root, "sessions.json");
+      const lockPath = `${sessionFile}.lock`;
+
+      // Write a stale lock file with current hostname and PID but different instanceId
+      // (simulating a previous process incarnation)
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({
+          pid: process.pid,
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          hostname: os.hostname(),
+          instanceId: `${os.hostname()}-${process.pid}-0`, // Different start time
+        }),
+        "utf8",
+      );
+
+      // Should be able to acquire the lock: same hostname+pid but different instanceId
+      const lock = await acquireSessionWriteLock({ sessionFile, timeoutMs: 2000 });
+
+      // Verify the lock was reclaimed (new timestamp and instanceId)
+      const raw = await fs.readFile(lockPath, "utf8");
+      const payload = JSON.parse(raw) as { pid: number; createdAt: string; instanceId: string };
+      expect(payload.pid).toBe(process.pid);
+      const lockAge = Date.now() - Date.parse(payload.createdAt);
+      expect(lockAge).toBeLessThan(1000); // Fresh lock, created just now
+
+      await lock.release();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT reclaim lock from different hostname (multi-container scenario)", async () => {
+    // Simulates: two containers with shared volume, both have PID 1.
+    // Container A holds the lock, Container B should NOT reclaim it.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "clawdbot-lock-multi-container-"));
+    try {
+      const sessionFile = path.join(root, "sessions.json");
+      const lockPath = `${sessionFile}.lock`;
+
+      // Write a lock file from "another container" with same PID but different hostname
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({
+          pid: process.pid, // Same PID (e.g., both containers are PID 1)
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          hostname: "other-container-hostname", // Different hostname
+          instanceId: "other-container-hostname-1-12345",
+        }),
+        "utf8",
+      );
+
+      // Should NOT be able to acquire the lock because hostname differs
+      // The lock will timeout because isAlive(process.pid) returns true
+      await expect(acquireSessionWriteLock({ sessionFile, timeoutMs: 500 })).rejects.toThrow(
+        /timeout/,
+      );
+
+      // Verify the original lock file is still there (not deleted)
+      const raw = await fs.readFile(lockPath, "utf8");
+      const payload = JSON.parse(raw) as { hostname: string };
+      expect(payload.hostname).toBe("other-container-hostname");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

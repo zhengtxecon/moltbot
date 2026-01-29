@@ -1,10 +1,13 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 type LockFilePayload = {
   pid: number;
   createdAt: string;
+  instanceId?: string; // Unique identifier: hostname-pid-startTime
+  hostname?: string; // Hostname of the process holding the lock
 };
 
 type HeldLock = {
@@ -15,6 +18,13 @@ type HeldLock = {
 
 const HELD_LOCKS = new Map<string, HeldLock>();
 const CLEANUP_SIGNALS = ["SIGINT", "SIGTERM", "SIGQUIT", "SIGABRT"] as const;
+
+// Unique identifier for this process instance, combining hostname, PID, and start time.
+// This distinguishes between:
+// 1. Same host, PID reuse after restart: same hostname+pid, different start time
+// 2. Different containers with same PID: different hostname
+const PROCESS_START_TIME = Math.floor(Date.now() - process.uptime() * 1000);
+const PROCESS_INSTANCE_ID = `${os.hostname()}-${process.pid}-${PROCESS_START_TIME}`;
 type CleanupSignal = (typeof CLEANUP_SIGNALS)[number];
 const cleanupHandlers = new Map<CleanupSignal, () => void>();
 
@@ -93,7 +103,12 @@ async function readLockPayload(lockPath: string): Promise<LockFilePayload | null
     const parsed = JSON.parse(raw) as Partial<LockFilePayload>;
     if (typeof parsed.pid !== "number") return null;
     if (typeof parsed.createdAt !== "string") return null;
-    return { pid: parsed.pid, createdAt: parsed.createdAt };
+    return {
+      pid: parsed.pid,
+      createdAt: parsed.createdAt,
+      instanceId: parsed.instanceId,
+      hostname: parsed.hostname,
+    };
   } catch {
     return null;
   }
@@ -144,7 +159,16 @@ export async function acquireSessionWriteLock(params: {
     try {
       const handle = await fs.open(lockPath, "wx");
       await handle.writeFile(
-        JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }, null, 2),
+        JSON.stringify(
+          {
+            pid: process.pid,
+            createdAt: new Date().toISOString(),
+            instanceId: PROCESS_INSTANCE_ID,
+            hostname: os.hostname(),
+          },
+          null,
+          2,
+        ),
         "utf8",
       );
       HELD_LOCKS.set(normalizedSessionFile, { count: 1, handle, lockPath });
@@ -164,7 +188,35 @@ export async function acquireSessionWriteLock(params: {
       if (code !== "EEXIST") throw err;
       const payload = await readLockPayload(lockPath);
       const createdAt = payload?.createdAt ? Date.parse(payload.createdAt) : NaN;
-      const stale = !Number.isFinite(createdAt) || Date.now() - createdAt > staleMs;
+      const lockAgeMs = Number.isFinite(createdAt) ? Date.now() - createdAt : Infinity;
+
+      // If the lock file claims to be held by our own hostname and PID but we
+      // don't have it in memory, and the instanceId differs, it's a stale lock
+      // from a previous process incarnation (e.g., container restart where PID
+      // got reused). Clean it up.
+      //
+      // We require hostname to match to avoid accidentally deleting locks from
+      // other containers that happen to share the same PID (e.g., multiple
+      // containers with PID 1 on a shared volume - each has a different hostname).
+      //
+      // We add a 5-second grace period to avoid accidentally deleting a lock that
+      // was just created but not yet registered in HELD_LOCKS (race condition).
+      const ownPidGraceMs = 5_000;
+      const sameHost = payload?.hostname === os.hostname();
+      const samePid = payload?.pid === process.pid;
+      const differentInstance = payload?.instanceId !== PROCESS_INSTANCE_ID;
+      if (
+        sameHost &&
+        samePid &&
+        differentInstance &&
+        !HELD_LOCKS.has(normalizedSessionFile) &&
+        lockAgeMs > ownPidGraceMs
+      ) {
+        await fs.rm(lockPath, { force: true });
+        continue;
+      }
+
+      const stale = lockAgeMs > staleMs;
       const alive = payload?.pid ? isAlive(payload.pid) : false;
       if (stale || !alive) {
         await fs.rm(lockPath, { force: true });
