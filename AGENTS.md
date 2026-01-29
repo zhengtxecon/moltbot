@@ -69,6 +69,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Verify critical sections exist after changes: `channels`, `tools`, `hooks`, `skills`, `gateway`
   - If config is corrupted, restore from git: `cd ~/.clawdbot && git checkout -- moltbot.json`
 - Add auth: `docker exec -it clawdbot-moltbot-gateway-1 moltbot auth add <provider>`
+- **Docker image rebuild (after code changes or to fix missing tools):**
+  ```bash
+  # Full rebuild (includes local extension tools: gog/m365/himalaya)
+  docker compose stop moltbot-gateway
+  docker build -t moltbot-base:latest .
+  docker build -f Dockerfile.local --build-arg BASE_IMAGE=moltbot-base:latest -t clawdbot:local .
+  docker compose up -d moltbot-gateway
+
+  # Verify tools are installed
+  docker exec clawdbot-moltbot-gateway-1 which gog m365 himalaya
+  ```
+- **Quick rebuild (code changes only, no new tools):**
+  ```bash
+  docker compose build && docker compose up -d
+  ```
+- **Image architecture:**
+  - `Dockerfile` - Base image with core moltbot functionality
+  - `Dockerfile.local` - Extension image that inherits from base and adds gog/m365/himalaya tools
+  - Local environment must use image built from `Dockerfile.local` for Google/Microsoft integrations
 
 ## exe.dev VM ops (general)
 - Access: stable path is `ssh exe.dev` then `ssh vm-name` (assume SSH key already set).
